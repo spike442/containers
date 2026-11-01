@@ -4,7 +4,7 @@ version = "1.5.0"
 requires-python = ">=3.12"
 dependencies = [
   "ebooklib>=0.18,<1",
-  "pillow>=11,<13",
+  "pillow>=13,<14",
   "pygments>=2.18,<3",
   "trafilatura>=2.0,<3",
 ]
