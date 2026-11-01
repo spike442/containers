@@ -18,7 +18,7 @@ class PdfReflower:
             source.write_bytes(pdf)
             screen = ["-w", str(self.width), "-h", str(self.height), "-dpi", str(self.dpi)]
             subprocess.run(
-                ["k2pdfopt", "-ui-", "-x", "-a-", *screen, "-o", str(target), str(source)],
+                ["k2pdfopt", "-ui-", "-x", "-a-", "-fc-", "-wrap+", *screen, "-o", str(target), str(source)],
                 check=True,
                 capture_output=True,
                 timeout=self.timeout_seconds,
