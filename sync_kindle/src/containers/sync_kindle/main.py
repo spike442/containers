@@ -51,7 +51,7 @@ def find_books() -> dict[Path, list[Path]]:
     books: defaultdict[Path, list[Path]] = defaultdict(list)
     for path in sorted(LIBRARY.rglob("*")):
         if path.suffix.lower() in CONTENT_TYPES and path.is_file():
-            books[path.parent].append(path)
+            books[path.with_suffix("")].append(path)
     return books
 
 

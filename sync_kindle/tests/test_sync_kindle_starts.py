@@ -57,7 +57,7 @@ def write_book(path: Path, content: bytes) -> None:
 def test_sync_kindle_sends_each_new_book_once(monkeypatch, tmp_path) -> None:
     library = tmp_path / "library"
     state = tmp_path / "data" / "deliveries.json"
-    write_book(library / "Frank Herbert" / "Dune Messiah" / "Dune Messiah.epub", b"epub")
+    write_book(library / "Frank Herbert" / "Dune Messiah.epub", b"epub")
     monkeypatch.setenv("LIBRARY", str(library))
     monkeypatch.setenv("STATE", str(state))
     monkeypatch.setenv("KINDLE_ADDRESS", "reader@kindle.test")
@@ -76,8 +76,8 @@ def test_sync_kindle_sends_each_new_book_once(monkeypatch, tmp_path) -> None:
             next(scans)
         except StopIteration:
             raise StopWatching from None
-        write_book(library / "Frank Herbert" / "Dune" / "Dune.epub", b"epub")
-        write_book(library / "Frank Herbert" / "Dune" / "Dune.pdf", b"pdf")
+        write_book(library / "Frank Herbert" / "Dune.epub", b"epub")
+        write_book(library / "Frank Herbert" / "Dune.pdf", b"pdf")
         write_book(library / "Joe Reis" / "Fundamentals" / "Fundamentals.pdf", b"pdf")
 
     monkeypatch.setattr(main.time, "sleep", next_scan)
@@ -89,8 +89,8 @@ def test_sync_kindle_sends_each_new_book_once(monkeypatch, tmp_path) -> None:
     recorded = json.loads(state.read_text())
     assert attachments == ["Dune.epub", "Fundamentals.pdf"]
     assert recorded == {
-        "Frank Herbert/Dune Messiah/Dune Messiah.epub": "baseline",
-        "Frank Herbert/Dune/Dune.epub": "sent",
+        "Frank Herbert/Dune Messiah.epub": "baseline",
+        "Frank Herbert/Dune.epub": "sent",
         "Joe Reis/Fundamentals/Fundamentals.pdf": "sent",
     }
     assert len(MemoryDiscord.messages) == 3
