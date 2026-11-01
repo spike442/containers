@@ -168,7 +168,7 @@ wheels = [
 
 [[package]]
 name = "containers-workspace"
-version = "1.5.1"
+version = "1.6.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -266,7 +266,7 @@ wheels = [
 
 [[package]]
 name = "kindle"
-version = "1.5.1"
+version = "1.6.0"
 source = { editable = "kindle" }
 dependencies = [
     { name = "ebooklib" },
