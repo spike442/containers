@@ -4,9 +4,11 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from lxml import html as lxml_html
+
 from kindle.channel import Channel
 from kindle.converter import EpubConverter
-from kindle.downloader import Downloader
+from kindle.downloader import Download, Downloader
 from kindle.mail import MAX_BYTES, Kindle
 from kindle.state import StateFile
 from kindle.webhook import Webhook
@@ -16,6 +18,7 @@ POLL_SECONDS = 30
 URL_PATTERN = re.compile(r"https?://[^\s<>|]+")
 DOCUMENT_TYPES = {".pdf": "application/pdf", ".epub": "application/epub+zip"}
 PAGE_TYPES = {"text/html", "application/xhtml+xml"}
+MDBOOK_MARKER = b"Book generated using mdBook"
 
 
 def document_suffix(url: str, content_type: str) -> str | None:
@@ -32,6 +35,15 @@ def safe_name(title: str) -> str:
     return cleaned[:100] or "article"
 
 
+def print_version(download: Download, downloader: Downloader) -> Download:
+    tree = lxml_html.fromstring(download.content)
+    links = [href for href in tree.xpath("//a/@href") if href.endswith("print.html")]
+    if not links:
+        return download
+    url = urllib.parse.urljoin(download.url, links[0])
+    return download if url == download.url else downloader.get(url)
+
+
 def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
     download = converter.downloader.get(url)
     suffix = document_suffix(download.url, download.content_type)
@@ -42,9 +54,13 @@ def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
         return filename, download.content, DOCUMENT_TYPES[suffix]
     if download.content_type not in PAGE_TYPES:
         raise ValueError(f"unsupported content type {download.content_type}")
-    article = converter.convert(download.url, download.content)
+    if MDBOOK_MARKER in download.content:
+        book = print_version(download, converter.downloader)
+        article = converter.convert_book(book.url, book.content)
+    else:
+        article = converter.convert(download.url, download.content)
     if len(article.epub) > MAX_BYTES:
-        raise ValueError("the article EPUB is larger than 18 MiB")
+        raise ValueError("the EPUB is larger than 18 MiB")
     return f"{safe_name(article.title)}.epub", article.epub, DOCUMENT_TYPES[".epub"]
 
 

@@ -19,10 +19,20 @@ PARAGRAPH = "Streaming systems process unbounded data with low latency and exact
 PAGE = f"""<html><head><title>Streaming 101</title><meta name="author" content="Tyler Akidau"></head>
 <body><nav>Home Blog About</nav><article><h1>Streaming 101</h1><p>{PARAGRAPH}</p>
 <img src="/images/watermark.png" alt="watermark"><p>{PARAGRAPH}</p></article><footer>Footer</footer></body></html>"""
+GUIDE = "https://docs.test/guide/intro.html"
+GUIDE_PRINT = "https://docs.test/print.html"
+GUIDE_PAGE = """<html lang="en"><head><title>Operator Guide</title></head><body><!-- Book generated using mdBook -->
+<nav><a href="../print.html">Print this book</a></nav><main><h1>Introduction</h1></main></body></html>"""
+GUIDE_PRINT_PAGE = f"""<html lang="en"><head><title>Operator Guide</title></head><body><!-- Book generated using mdBook -->
+<nav><a href="print.html">Print this book</a></nav><main>
+<h1 id="introduction">Introduction</h1><p>{PARAGRAPH}</p><p>Read <a href="#reconcile">the loop</a>.</p>
+<img src="images/demo.gif" alt="demo">
+<h1 id="reconcile">Reconcile</h1><p>{PARAGRAPH}</p><img src="images/watermark.png" alt="diagram">
+</main></body></html>"""
 MESSAGES = [
     {
         "id": "1300000000000000002",
-        "content": f"read later {ARTICLE} and <{PAPER}> and {GUARDED}",
+        "content": f"read later {ARTICLE} and <{PAPER}> and {GUARDED} and {GUIDE}",
         "author": {"id": "7"},
     },
     {"id": "1300000000000000003", "content": f"📚 {ARTICLE} sent", "author": {"id": "8", "bot": True}},
@@ -95,6 +105,12 @@ class MemoryWeb:
             return MemoryResponse(b"\x89PNG\r\n\x1a\n", "image/png", url)
         if url == PAPER:
             return MemoryResponse(b"%PDF-1.7", "application/pdf", url)
+        if url == GUIDE:
+            return MemoryResponse(GUIDE_PAGE.encode(), "text/html", url)
+        if url == GUIDE_PRINT:
+            return MemoryResponse(GUIDE_PRINT_PAGE.encode(), "text/html", url)
+        if url == "https://docs.test/images/demo.gif":
+            return MemoryResponse(b"GIF89a", "image/gif", url)
         if url == GUARDED:
             raise urllib.error.HTTPError(url, 403, "Forbidden", Message(), None)
         if url == f"{SOLVER}/v1":
@@ -170,7 +186,7 @@ def test_sync_kindle_sends_each_new_book_once(kindle, monkeypatch, tmp_path) -> 
     assert len(kindle.webhook) == 3
 
 
-def test_fetch_articles_sends_each_linked_page_and_document_and_guarded_page(kindle, monkeypatch, tmp_path) -> None:
+def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(kindle, monkeypatch, tmp_path) -> None:
     state = tmp_path / "data" / "fetch-articles.json"
     from kindle import fetch_articles
 
@@ -182,17 +198,24 @@ def test_fetch_articles_sends_each_linked_page_and_document_and_guarded_page(kin
     attachments = [next(message.iter_attachments()) for message in MemorySmtp.sent]
     names = [attachment.get_filename() for attachment in attachments]
     article = zipfile.ZipFile(BytesIO(attachments[0].get_payload(decode=True)))
-    chapter = article.read("EPUB/article.xhtml").decode()
+    chapter = article.read("EPUB/chapter0.xhtml").decode()
+    guide = zipfile.ZipFile(BytesIO(attachments[3].get_payload(decode=True)))
+    navigation = guide.read("EPUB/nav.xhtml").decode()
+    introduction = guide.read("EPUB/chapter0.xhtml").decode()
     reactions = [url for method, url, _ in kindle.discord if method == "PUT"]
     replies = [json.loads(data)["content"] for method, _, data in kindle.discord if method == "POST"]
-    assert names == ["Streaming 101.epub", "dynamo.pdf", "Batch 201.epub"]
+    assert names == ["Streaming 101.epub", "dynamo.pdf", "Batch 201.epub", "Operator Guide.epub"]
     assert "EPUB/images/0.png" in article.namelist()
     assert "Streaming systems process unbounded data" in chapter
     assert "Home Blog About" not in chapter
-    assert len(reactions) == 3 and all(url.endswith("/reactions/%E2%9C%85/@me") for url in reactions)
+    assert "Introduction" in navigation and "Reconcile" in navigation
+    assert 'href="chapter1.xhtml#reconcile"' in introduction
+    assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/1.png"]
+    assert len(reactions) == 4 and all(url.endswith("/reactions/%E2%9C%85/@me") for url in reactions)
     assert replies == [
         "📰 Streaming 101.epub sent to Kindle",
         "📰 dynamo.pdf sent to Kindle",
         "📰 Batch 201.epub sent to Kindle",
+        "📰 Operator Guide.epub sent to Kindle",
     ]
     assert json.loads(state.read_text()) == {"last_message_id": "1300000000000000003"}
