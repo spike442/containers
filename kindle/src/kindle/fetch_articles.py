@@ -81,7 +81,7 @@ def main() -> None:
     kindle = Kindle.from_env()
     webhook = Webhook.from_env()
     state_file = StateFile(STATE)
-    converter = EpubConverter(Downloader())
+    converter = EpubConverter(Downloader.from_env())
     state = state_file.load()
     last_error = ""
     while True:
