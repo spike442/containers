@@ -22,6 +22,12 @@ PARAGRAPH = "Streaming systems process unbounded data with low latency and exact
 PAGE = f"""<html><head><title>Streaming 101</title><meta name="author" content="Tyler Akidau"></head>
 <body><nav>Home Blog About</nav><article><h1>Streaming 101</h1><p>{PARAGRAPH}</p>
 <img src="/images/watermark.png" alt="watermark"><p>{PARAGRAPH}</p></article><footer>Footer</footer></body></html>"""
+SERIES = "https://blog.test/series/streaming/"
+SERIES_PAGE = """<html><head><title>Streaming Series</title></head><body><main>
+<article><h2>Streaming 101</h2><p>Unbounded data basics.</p><a href="/posts/streaming">Read more</a></article>
+<article><h2>Windows</h2><p>Event time windows.</p><a href="/posts/windows">Read more</a></article>
+<article><h2>Watermarks</h2><p>Completeness over time.</p><a href="/posts/watermarks">Read more →</a></article>
+</main></body></html>"""
 GUIDE = "https://docs.test/guide/intro.html"
 GUIDE_PRINT = "https://docs.test/print.html"
 GUIDE_PAGE = """<html lang="en"><head><title>Operator Guide</title></head><body><!-- Book generated using mdBook -->
@@ -42,6 +48,7 @@ MESSAGES = [
         "author": {"id": "7"},
     },
     {"id": "1300000000000000003", "content": f"📚 {ARTICLE} sent", "author": {"id": "8", "bot": True}},
+    {"id": "1300000000000000004", "content": SERIES, "author": {"id": "7"}},
 ]
 
 
@@ -122,6 +129,11 @@ class MemoryWeb:
             return MemoryResponse(body, "application/json", url)
         if url == ARTICLE:
             return MemoryResponse(PAGE.encode(), "text/html", url)
+        if url == SERIES:
+            return MemoryResponse(SERIES_PAGE.encode(), "text/html", url)
+        if url in ("https://blog.test/posts/windows", "https://blog.test/posts/watermarks"):
+            title = url.rsplit("/", 1)[1].title()
+            return MemoryResponse(PAGE.replace("Streaming 101", title).encode(), "text/html", url)
         if url.endswith("/images/watermark.png"):
             return MemoryResponse(b"\x89PNG\r\n\x1a\n", "image/png", url)
         if url == PAPER:
@@ -234,7 +246,14 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
         "Dynamo Highly Available Key-value Store.pdf",
         "Batch 201.epub",
         "Operator Guide.epub",
+        "Streaming Series.epub",
     ]
+    series = zipfile.ZipFile(BytesIO(attachments[4].get_payload(decode=True)))
+    series_navigation = series.read("EPUB/nav.xhtml").decode()
+    assert [name for name in series.namelist() if "chapter" in name] == [
+        f"EPUB/chapter{index}.xhtml" for index in range(3)
+    ]
+    assert all(title in series_navigation for title in ("Streaming 101", "Windows", "Watermarks"))
     paper = PdfReader(BytesIO(attachments[1].get_payload(decode=True)))
     assert paper.metadata.title == "Dynamo: Highly Available Key-value Store"
     assert "EPUB/images/0.png" in article.namelist()
@@ -253,11 +272,12 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
     )
     assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/0.png", "EPUB/images/1.jpg"]
     seen, done = "%F0%9F%91%80", "%F0%9F%92%AF"
-    assert [url.rsplit("/", 2)[1] for url in reactions] == [seen, done, done, done, done]
+    assert [url.rsplit("/", 2)[1] for url in reactions] == [seen, done, done, done, done, seen, done]
     assert replies == [
         "📰 Streaming 101.epub sent to Kindle",
         "📰 Dynamo Highly Available Key-value Store.pdf sent to Kindle",
         "📰 Batch 201.epub sent to Kindle",
         "📰 Operator Guide.epub sent to Kindle",
+        "📰 Streaming Series.epub sent to Kindle",
     ]
-    assert json.loads(state.read_text()) == {"last_message_id": "1300000000000000003"}
+    assert json.loads(state.read_text()) == {"last_message_id": "1300000000000000004"}

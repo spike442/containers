@@ -13,7 +13,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
-from kindle.downloader import Downloader
+from kindle.downloader import Download, Downloader
 
 MAX_IMAGE_BYTES = 1024 * 1024
 SKIPPED_IMAGE_TYPES = {"image/gif"}
@@ -45,15 +45,31 @@ class EpubConverter:
     downloader: Downloader
 
     def convert(self, url: str, page: bytes) -> Article:
+        title, content, metadata = self.extract(url, page)
+        return self.build(url, title, metadata.language or "en", metadata.author, [(title, content)])
+
+    def convert_series(self, url: str, page: bytes, posts: list[Download]) -> Article:
+        metadata = trafilatura.extract_metadata(trafilatura.load_html(page), default_url=url)
+        chapters = []
+        for post in posts:
+            try:
+                title, content, _ = self.extract(post.url, post.content)
+            except ValueError:
+                continue
+            chapters.append((title, content))
+        if not chapters:
+            raise ValueError("no article text found in the series")
+        return self.build(url, metadata.title or url, metadata.language or "en", metadata.author, chapters)
+
+    def extract(self, url: str, page: bytes) -> tuple[str, str, trafilatura.metadata.Document]:
         tree = trafilatura.load_html(page)
         body = trafilatura.extract(tree, url=url, output_format="html", include_images=True, include_comments=False)
         if not body:
             raise ValueError("no article text found on the page")
         metadata = trafilatura.extract_metadata(tree, default_url=url)
-        title = metadata.title or url
         byline = " · ".join(part for part in (metadata.author, metadata.sitename, metadata.date) if part)
         content = f"<p><em>{escape(byline)}</em></p>{body}<p><a href='{escape(url)}'>{escape(url)}</a></p>"
-        return self.build(url, title, metadata.language or "en", metadata.author, [(title, content)])
+        return metadata.title or url, content, metadata
 
     def convert_book(self, url: str, page: bytes) -> Article:
         tree = lxml_html.fromstring(page)

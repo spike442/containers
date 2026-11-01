@@ -10,6 +10,7 @@ from kindle.channel import Channel
 from kindle.converter import EpubConverter
 from kindle.downloader import Download, Downloader
 from kindle.mail import MAX_BYTES, Kindle
+from kindle.series import BlogSeries
 from kindle.state import StateFile
 from kindle.titler import PdfTitler
 from kindle.webhook import Webhook
@@ -76,6 +77,8 @@ def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
     if MDBOOK_MARKER in download.content:
         book = print_version(download, converter.downloader)
         article = converter.convert_book(book.url, book.content)
+    elif posts := BlogSeries(converter.downloader).posts(download):
+        article = converter.convert_series(download.url, download.content, posts)
     else:
         article = converter.convert(download.url, download.content)
     if len(article.epub) > MAX_BYTES:
