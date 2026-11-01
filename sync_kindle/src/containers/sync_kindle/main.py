@@ -30,12 +30,15 @@ def notify(message: str) -> None:
 
 
 def load_state() -> dict[str, str]:
+    if not STATE.exists():
+        return {}
     text = STATE.read_text()
     return json.loads(text)
 
 
 def save_state(state: dict[str, str]) -> None:
     body = json.dumps(state, indent=2, sort_keys=True)
+    STATE.parent.mkdir(parents=True, exist_ok=True)
     staging = STATE.with_suffix(".tmp")
     staging.write_text(body)
     staging.replace(STATE)
@@ -94,18 +97,8 @@ def deliver(path: Path, state: dict[str, str], failing: set[Path]) -> None:
     notify(f"📚 {path.name} sent to Kindle")
 
 
-def record_library(books: dict[Path, list[Path]]) -> None:
-    state = {relative(path): "baseline" for files in books.values() for path in files}
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    save_state(state)
-    notify(f"📖 sync-kindle started: {len(state)} files already in the library, none sent")
-
-
 def sync(failing: set[Path]) -> None:
     books = find_books()
-    if not STATE.exists():
-        record_library(books)
-        return
     state = load_state()
     for files in books.values():
         if any(relative(path) in state for path in files):

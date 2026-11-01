@@ -87,9 +87,9 @@ def test_sync_kindle_sends_each_new_book_once(monkeypatch, tmp_path) -> None:
 
     attachments = [next(message.iter_attachments()).get_filename() for message in MemorySmtp.sent]
     recorded = json.loads(state.read_text())
-    assert attachments == ["Dune.epub", "Fundamentals.pdf"]
+    assert attachments == ["Dune Messiah.epub", "Dune.epub", "Fundamentals.pdf"]
     assert recorded == {
-        "Frank Herbert/Dune Messiah.epub": "baseline",
+        "Frank Herbert/Dune Messiah.epub": "sent",
         "Frank Herbert/Dune.epub": "sent",
         "Joe Reis/Fundamentals/Fundamentals.pdf": "sent",
     }
