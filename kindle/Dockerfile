@@ -14,7 +14,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/app/.venv/bin:$PATH
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates passwd \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates k2pdfopt passwd \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 65532 --create-home --shell /usr/sbin/nologin kindle
 COPY --from=build /app/.venv /app/.venv

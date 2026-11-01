@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 import time
 import urllib.parse
 from pathlib import Path
@@ -10,6 +11,7 @@ from kindle.channel import Channel
 from kindle.converter import EpubConverter
 from kindle.downloader import Download, Downloader
 from kindle.mail import MAX_BYTES, Kindle
+from kindle.reflower import PdfReflower
 from kindle.state import StateFile
 from kindle.webhook import Webhook
 
@@ -44,14 +46,27 @@ def print_version(download: Download, downloader: Downloader) -> Download:
     return download if url == download.url else downloader.get(url)
 
 
-def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
+def reflowed(pdf: bytes, reflower: PdfReflower) -> bytes:
+    try:
+        content = reflower.reflow(pdf)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"⚠️ PDF sent unchanged, reflow failed: {error}", flush=True)
+        return pdf
+    if len(content) > MAX_BYTES:
+        print("⚠️ PDF sent unchanged, reflowed file is larger than 18 MiB", flush=True)
+        return pdf
+    return content
+
+
+def fetch(url: str, converter: EpubConverter, reflower: PdfReflower) -> tuple[str, bytes, str]:
     download = converter.downloader.get(url)
     suffix = document_suffix(download.url, download.content_type)
     if suffix:
         path = urllib.parse.urlparse(download.url).path
         name = urllib.parse.unquote(Path(path).name)
         filename = name if name.lower().endswith(suffix) else f"document{suffix}"
-        return filename, download.content, DOCUMENT_TYPES[suffix]
+        content = reflowed(download.content, reflower) if suffix == ".pdf" else download.content
+        return filename, content, DOCUMENT_TYPES[suffix]
     if download.content_type not in PAGE_TYPES:
         raise ValueError(f"unsupported content type {download.content_type}")
     if MDBOOK_MARKER in download.content:
@@ -64,30 +79,39 @@ def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
     return f"{safe_name(article.title)}.epub", article.epub, DOCUMENT_TYPES[".epub"]
 
 
-def handle(message: dict, channel: Channel, kindle: Kindle, converter: EpubConverter) -> None:
+def handle(message: dict, channel: Channel, kindle: Kindle, converter: EpubConverter, reflower: PdfReflower) -> None:
+    channel.react(message["id"], "👀")
     urls = URL_PATTERN.findall(message.get("content", ""))
     for url in urls:
         try:
-            filename, content, content_type = fetch(url, converter)
+            filename, content, content_type = fetch(url, converter, reflower)
             kindle.send(filename, content, content_type)
         except Exception as error:
             channel.answer(message["id"], "❌", f"❌ {url} could not be sent: {error}")
             continue
-        channel.answer(message["id"], "✅", f"📰 {filename} sent to Kindle")
+        channel.answer(message["id"], "💯", f"📰 {filename} sent to Kindle")
 
 
 def is_from_a_person(message: dict) -> bool:
     return "webhook_id" not in message and not message["author"].get("bot")
 
 
-def poll(state: dict, channel: Channel, kindle: Kindle, state_file: StateFile, converter: EpubConverter) -> None:
+def poll(
+    state: dict,
+    channel: Channel,
+    kindle: Kindle,
+    state_file: StateFile,
+    *,
+    converter: EpubConverter,
+    reflower: PdfReflower,
+) -> None:
     if "last_message_id" not in state:
         state["last_message_id"] = Channel.now_id()
         state_file.save(state)
     messages = channel.messages(state["last_message_id"])
     for message in messages:
         if is_from_a_person(message):
-            handle(message, channel, kindle, converter)
+            handle(message, channel, kindle, converter, reflower)
         state["last_message_id"] = message["id"]
         state_file.save(state)
 
@@ -98,11 +122,12 @@ def main() -> None:
     webhook = Webhook.from_env()
     state_file = StateFile(STATE)
     converter = EpubConverter(Downloader.from_env())
+    reflower = PdfReflower()
     state = state_file.load()
     last_error = ""
     while True:
         try:
-            poll(state, channel, kindle, state_file, converter)
+            poll(state, channel, kindle, state_file, converter=converter, reflower=reflower)
             last_error = ""
         except Exception as error:
             if repr(error) != last_error:

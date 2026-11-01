@@ -35,12 +35,18 @@ class Channel:
         messages = json.loads(text)
         return sorted(messages, key=lambda message: int(message["id"]))
 
-    def answer(self, message_id: str, emoji: str, text: str) -> None:
-        print(text, flush=True)
+    def react(self, message_id: str, emoji: str) -> None:
         reaction = urllib.parse.quote(emoji)
-        reply = {"content": text, "message_reference": {"message_id": message_id}, "allowed_mentions": {"parse": []}}
         try:
             self.request("PUT", f"/messages/{message_id}/reactions/{reaction}/@me")
+        except OSError as error:
+            print(f"discord reaction failed: {error}", flush=True)
+
+    def answer(self, message_id: str, emoji: str, text: str) -> None:
+        print(text, flush=True)
+        self.react(message_id, emoji)
+        reply = {"content": text, "message_reference": {"message_id": message_id}, "allowed_mentions": {"parse": []}}
+        try:
             self.request("POST", "/messages", reply)
         except OSError as error:
             print(f"discord answer failed: {error}", flush=True)
