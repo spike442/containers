@@ -6,6 +6,7 @@ dependencies = [
   "ebooklib>=0.18,<1",
   "pillow>=13,<14",
   "pygments>=2.18,<3",
+  "pypdf>=6,<7",
   "trafilatura>=2.0,<3",
 ]
 

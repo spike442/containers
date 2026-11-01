@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import DictionaryObject, NameObject, StreamObject
 
 AN_HOUR_AGO = time.time() - 3600
 WEBHOOK = "https://discord.test/webhook"
@@ -45,6 +47,21 @@ MESSAGES = [
 
 class StopWatching(Exception):
     pass
+
+
+def paper_pdf(title: str) -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(612, 792)
+    font = {NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1")}
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    fonts = DictionaryObject({NameObject("/F1"): writer._add_object(DictionaryObject(font))})
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): fonts})
+    contents = StreamObject()
+    contents.set_data(f"BT /F1 24 Tf 72 700 Td ({title}) Tj ET BT /F1 10 Tf 72 600 Td (Abstract) Tj ET".encode())
+    page[NameObject("/Contents")] = writer._add_object(contents)
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 class MemorySmtp:
@@ -108,7 +125,7 @@ class MemoryWeb:
         if url.endswith("/images/watermark.png"):
             return MemoryResponse(b"\x89PNG\r\n\x1a\n", "image/png", url)
         if url == PAPER:
-            return MemoryResponse(b"%PDF-1.7", "application/pdf", url)
+            return MemoryResponse(paper_pdf("Dynamo: Highly Available Key-value Store"), "application/pdf", url)
         if url == GUIDE:
             return MemoryResponse(GUIDE_PAGE.encode(), "text/html", url)
         if url == GUIDE_PRINT:
@@ -212,8 +229,14 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
     introduction = guide.read("EPUB/chapter0.xhtml").decode()
     reactions = [url for method, url, _ in kindle.discord if method == "PUT"]
     replies = [json.loads(data)["content"] for method, _, data in kindle.discord if method == "POST"]
-    assert names == ["Streaming 101.epub", "dynamo.pdf", "Batch 201.epub", "Operator Guide.epub"]
-    assert attachments[1].get_payload(decode=True) == b"%PDF-1.7"
+    assert names == [
+        "Streaming 101.epub",
+        "Dynamo Highly Available Key-value Store.pdf",
+        "Batch 201.epub",
+        "Operator Guide.epub",
+    ]
+    paper = PdfReader(BytesIO(attachments[1].get_payload(decode=True)))
+    assert paper.metadata.title == "Dynamo: Highly Available Key-value Store"
     assert "EPUB/images/0.png" in article.namelist()
     assert "Streaming systems process unbounded data" in chapter
     assert "Home Blog About" not in chapter
@@ -229,10 +252,11 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
         and "\t" not in introduction
     )
     assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/0.png", "EPUB/images/1.jpg"]
-    assert [url.rsplit("/", 2)[1] for url in reactions] == ["%F0%9F%91%80"] + ["%F0%9F%92%AF"] * 4
+    seen, done = "%F0%9F%91%80", "%F0%9F%92%AF"
+    assert [url.rsplit("/", 2)[1] for url in reactions] == [seen, done, done, done, done]
     assert replies == [
         "📰 Streaming 101.epub sent to Kindle",
-        "📰 dynamo.pdf sent to Kindle",
+        "📰 Dynamo Highly Available Key-value Store.pdf sent to Kindle",
         "📰 Batch 201.epub sent to Kindle",
         "📰 Operator Guide.epub sent to Kindle",
     ]

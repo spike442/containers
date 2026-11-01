@@ -11,6 +11,7 @@ from kindle.converter import EpubConverter
 from kindle.downloader import Download, Downloader
 from kindle.mail import MAX_BYTES, Kindle
 from kindle.state import StateFile
+from kindle.titler import PdfTitler
 from kindle.webhook import Webhook
 
 STATE = Path(os.environ.get("STATE", "/data/fetch-articles.json"))
@@ -18,6 +19,7 @@ POLL_SECONDS = 30
 URL_PATTERN = re.compile(r"https?://[^\s<>|]+")
 DOCUMENT_TYPES = {".pdf": "application/pdf", ".epub": "application/epub+zip"}
 PAGE_TYPES = {"text/html", "application/xhtml+xml"}
+TITLER = PdfTitler()
 MDBOOK_MARKER = b"Book generated using mdBook"
 
 
@@ -44,6 +46,20 @@ def print_version(download: Download, downloader: Downloader) -> Download:
     return download if url == download.url else downloader.get(url)
 
 
+def titled_pdf(pdf: bytes, filename: str) -> tuple[str, bytes]:
+    try:
+        title = TITLER.title(pdf)
+        if not title:
+            return filename, pdf
+        retitled = TITLER.retitle(pdf, title)
+    except Exception as error:
+        print(f"⚠️ {filename} sent with its original title: {error}", flush=True)
+        return filename, pdf
+    if len(retitled) > MAX_BYTES:
+        return filename, pdf
+    return f"{safe_name(title)}.pdf", retitled
+
+
 def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
     download = converter.downloader.get(url)
     suffix = document_suffix(download.url, download.content_type)
@@ -51,6 +67,9 @@ def fetch(url: str, converter: EpubConverter) -> tuple[str, bytes, str]:
         path = urllib.parse.urlparse(download.url).path
         name = urllib.parse.unquote(Path(path).name)
         filename = name if name.lower().endswith(suffix) else f"document{suffix}"
+        if suffix == ".pdf":
+            filename, content = titled_pdf(download.content, filename)
+            return filename, content, DOCUMENT_TYPES[suffix]
         return filename, download.content, DOCUMENT_TYPES[suffix]
     if download.content_type not in PAGE_TYPES:
         raise ValueError(f"unsupported content type {download.content_type}")
@@ -69,8 +88,8 @@ def handle(message: dict, channel: Channel, kindle: Kindle, converter: EpubConve
     urls = URL_PATTERN.findall(message.get("content", ""))
     for url in urls:
         try:
-            filename, content, content_type = fetch(url, converter)
-            kindle.send(filename, content, content_type)
+            filename, document, content_type = fetch(url, converter)
+            kindle.send(filename, document, content_type)
         except Exception as error:
             channel.answer(message["id"], "❌", f"❌ {url} could not be sent: {error}")
             continue
