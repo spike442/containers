@@ -270,12 +270,14 @@ version = "1.4.1"
 source = { editable = "kindle" }
 dependencies = [
     { name = "ebooklib" },
+    { name = "pygments" },
     { name = "trafilatura" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ebooklib", specifier = ">=0.18,<1" },
+    { name = "pygments", specifier = ">=2.18,<3" },
     { name = "trafilatura", specifier = ">=2.0,<3" },
 ]
 

@@ -1,4 +1,5 @@
 import mimetypes
+import re
 import urllib.parse
 from dataclasses import dataclass
 from html import escape
@@ -7,6 +8,10 @@ from io import BytesIO
 import trafilatura
 from ebooklib import epub
 from lxml import html as lxml_html
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+from pygments.util import ClassNotFound
 
 from kindle.downloader import Downloader
 
@@ -14,6 +19,18 @@ MAX_IMAGE_BYTES = 1024 * 1024
 SKIPPED_IMAGE_TYPES = {"image/gif"}
 CHAPTER_FILE = "chapter{}.xhtml"
 UNSUPPORTED_ELEMENTS = ".//svg | .//script | .//style | .//input | .//button | .//form | .//iframe"
+LANGUAGE_CLASS = re.compile(r"\b(?:language|lang|highlight-source|highlight)-([\w+#-]+)")
+CODE_FORMATTER = HtmlFormatter(nowrap=True, style="default")
+STYLESHEET = """
+pre { font-family: monospace; font-size: 0.75em; line-height: 1.3; white-space: pre-wrap; text-align: left;
+  hyphens: none; -webkit-hyphens: none; margin: 1em 0; padding: 0.4em 0.6em; border-left: 3px solid #888; }
+code, kbd, samp, tt { font-family: monospace; hyphens: none; -webkit-hyphens: none; }
+aside, blockquote { margin: 1em 0; padding: 0.4em 0.8em; border: 1px solid #888; }
+summary { font-weight: bold; }
+table { border-collapse: collapse; }
+td, th { border: 1px solid #888; padding: 0.2em 0.4em; }
+img { max-width: 100%; }
+""" + CODE_FORMATTER.get_style_defs("pre")
 
 
 @dataclass(frozen=True)
@@ -75,10 +92,13 @@ class EpubConverter:
         book.set_language(language)
         if author:
             book.add_author(author)
+        style = epub.EpubItem(uid="style", file_name="style.css", media_type="text/css", content=STYLESHEET)
+        book.add_item(style)
         items = []
         for index, (name, content) in enumerate(chapters):
             item = epub.EpubHtml(title=name, file_name=CHAPTER_FILE.format(index), lang=language)
-            item.content = self.embed_images(book, content, url)
+            item.add_item(style)
+            item.content = self.render(book, content, url)
             book.add_item(item)
             items.append(item)
         book.toc = items
@@ -89,8 +109,13 @@ class EpubConverter:
         epub.write_epub(buffer, book)
         return Article(title=title, epub=buffer.getvalue())
 
-    def embed_images(self, book: epub.EpubBook, content: str, url: str) -> str:
+    def render(self, book: epub.EpubBook, content: str, url: str) -> str:
         tree = lxml_html.fragment_fromstring(content, create_parent="div")
+        self.embed_images(book, tree, url)
+        self.format_code(tree)
+        return escape(tree.text or "") + "".join(lxml_html.tostring(child, encoding="unicode") for child in tree)
+
+    def embed_images(self, book: epub.EpubBook, tree: lxml_html.HtmlElement, url: str) -> None:
         for image in list(tree.iter("img")):
             source = urllib.parse.urljoin(url, image.get("src", ""))
             try:
@@ -105,7 +130,7 @@ class EpubConverter:
             ):
                 image.drop_tree()
                 continue
-            index = len(book.items)
+            index = sum(1 for item in book.items if item.media_type.startswith("image/"))
             extension = mimetypes.guess_extension(download.content_type) or ".img"
             name = f"images/{index}{extension}"
             item = epub.EpubItem(
@@ -113,4 +138,17 @@ class EpubConverter:
             )
             book.add_item(item)
             image.set("src", name)
-        return escape(tree.text or "") + "".join(lxml_html.tostring(child, encoding="unicode") for child in tree)
+
+    def format_code(self, tree: lxml_html.HtmlElement) -> None:
+        for block in list(tree.iter("pre")):
+            classes = " ".join(element.get("class", "") for element in block.iter())
+            source = block.text_content().expandtabs(4)
+            match = LANGUAGE_CLASS.search(classes)
+            try:
+                lexer = get_lexer_by_name(match.group(1)) if match else None
+            except ClassNotFound:
+                lexer = None
+            code = highlight(source, lexer, CODE_FORMATTER) if lexer else escape(source)
+            formatted = lxml_html.fragment_fromstring(f"<pre><code>{code}</code></pre>")
+            formatted.tail = block.tail
+            block.getparent().replace(block, formatted)
