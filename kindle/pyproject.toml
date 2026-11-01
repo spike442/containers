@@ -1,0 +1,20 @@
+[project]
+name = "kindle"
+version = "1.1.1"
+requires-python = ">=3.12"
+dependencies = [
+  "ebooklib>=0.18,<1",
+  "trafilatura>=2.0,<3",
+]
+
+[project.scripts]
+sync-kindle = "kindle.sync_kindle:main"
+fetch-articles = "kindle.fetch_articles:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kindle*"]

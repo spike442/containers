@@ -5,10 +5,10 @@ FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0
 WORKDIR /app
 ENV UV_PYTHON_DOWNLOADS=0
 COPY pyproject.toml uv.lock ./
-COPY sync_kindle ./sync_kindle
+COPY kindle ./kindle
 ARG VERSION
 RUN if [ -n "$VERSION" ]; then find . -name pyproject.toml -exec sed -i "s/^version = \"[^\"]*\"$/version = \"${VERSION}\"/" {} +; fi
-RUN --mount=from=uv,source=/uv,target=/bin/uv UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen --no-dev --package containers-sync-kindle --no-editable
+RUN --mount=from=uv,source=/uv,target=/bin/uv UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen --no-dev --package kindle --no-editable
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,7 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/app/.venv/bin:$PATH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates passwd \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 65532 --create-home --shell /usr/sbin/nologin sync-kindle
+    && useradd --uid 65532 --create-home --shell /usr/sbin/nologin kindle
 COPY --from=build /app/.venv /app/.venv
 USER 65532:65532
-ENTRYPOINT ["python", "-m", "containers.sync_kindle.main"]
+CMD ["sync-kindle"]
