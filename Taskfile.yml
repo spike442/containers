@@ -1,0 +1,29 @@
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  setup:
+    desc: Install the workspace and the pre-commit hooks
+    cmds:
+      - uv sync --locked --all-packages --group dev
+      - pre-commit install
+
+  lint:
+    desc: Run the pre-commit secret scan, lint, and format hooks on every file
+    cmds:
+      - pre-commit run --all-files
+
+  test:
+    desc: Run every container's startup test
+    cmds:
+      - .venv/bin/python -m pytest -q
+
+  build:
+    desc: Build one container image locally
+    requires:
+      vars: [CONTAINER]
+    cmds:
+      - docker build --file {{.CONTAINER}}/Dockerfile --tag {{.CONTAINER}}:local .

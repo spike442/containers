@@ -1,0 +1,129 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ""
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  images:
+    name: Images
+    runs-on: ubuntu-24.04
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: images
+        name: List the images
+        env:
+          REPOSITORY: ${{ github.event.repository.name }}
+          VERSION: ${{ inputs.version || 'ci' }}
+        run: |
+          images="$(git ls-files 'Dockerfile' '*/Dockerfile' | jq -R -s -c --arg repository "$REPOSITORY" --arg version "$VERSION" '
+            split("\n") | map(select(length > 0) | split("/") | .[0:-1]
+              | {image: (if length == 0 then $repository else join("-") end), path: (if length == 0 then "." else join("/") end), version: $version})')"
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          jq -r '"Building: " + (map("\(.image):\(.version)") | join(", "))' <<< "$images"
+
+  python:
+    name: Python checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.20"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked --all-packages --group dev
+      - name: Format
+        run: uv run --no-sync ruff format --check .
+      - name: Lint
+        run: uv run --no-sync ruff check .
+      - name: Startup tests
+        run: uv run --no-sync pytest -q
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.20"
+          python-version: "3.12"
+      - name: Python
+        run: |
+          uv export --frozen --no-dev --all-packages --no-emit-workspace --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit==2.10.1 --strict --require-hashes -r "$RUNNER_TEMP/requirements.txt"
+
+  image:
+    name: Image (${{ matrix.image }})
+    needs: [images, python]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.images.outputs.images) }}
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ matrix.version }}
+      PUBLISH: ${{ inputs.version != '' }}
+      SCAN: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: build
+        name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          file: ${{ matrix.path }}/Dockerfile
+          build-args: VERSION=${{ inputs.version }}
+          push: ${{ env.PUBLISH == 'true' }}
+          load: ${{ env.PUBLISH != 'true' && github.event_name != 'pull_request' }}
+          tags: ${{ env.IMAGE }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          sbom: ${{ env.PUBLISH == 'true' }}
+          provenance: ${{ env.PUBLISH == 'true' && 'mode=max' || 'false' }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+      - if: env.PUBLISH == 'true'
+        name: Sign
+        run: cosign sign --yes "${IMAGE%:*}@${{ steps.build.outputs.digest }}"
+      - if: env.SCAN == 'true'
+        name: Scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ env.PUBLISH == 'true' && github.actor || '' }}
+          TRIVY_PASSWORD: ${{ env.PUBLISH == 'true' && github.token || '' }}
+        with:
+          image-ref: ${{ env.PUBLISH == 'true' && format('{0}@{1}', env.IMAGE, steps.build.outputs.digest) || env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+      - if: env.SCAN == 'true'
+        name: Report
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: image-${{ matrix.image }}
