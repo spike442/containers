@@ -19,12 +19,12 @@ wheels = [
 
 [[package]]
 name = "containers-sync-kindle"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "sync_kindle" }
 
 [[package]]
 name = "containers-workspace"
-version = "1.0.0"
+version = "1.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
