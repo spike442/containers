@@ -1,4 +1,3 @@
-import mimetypes
 import re
 import urllib.parse
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from io import BytesIO
 import trafilatura
 from ebooklib import epub
 from lxml import html as lxml_html
+from PIL import Image
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
@@ -17,6 +17,7 @@ from kindle.downloader import Downloader
 
 MAX_IMAGE_BYTES = 1024 * 1024
 SKIPPED_IMAGE_TYPES = {"image/gif"}
+KINDLE_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png"}
 CHAPTER_FILE = "chapter{}.xhtml"
 UNSUPPORTED_ELEMENTS = ".//svg | .//script | .//style | .//input | .//button | .//form | .//iframe"
 LANGUAGE_CLASS = re.compile(r"\b(?:language|lang|highlight-source|highlight)-([\w+#-]+)")
@@ -120,24 +121,30 @@ class EpubConverter:
             source = urllib.parse.urljoin(url, image.get("src", ""))
             try:
                 download = self.downloader.get(source)
+                if not download.content_type.startswith("image/") or download.content_type in SKIPPED_IMAGE_TYPES:
+                    raise ValueError(f"unsupported image type {download.content_type}")
+                content, content_type = download.content, download.content_type
+                if content_type not in KINDLE_IMAGE_TYPES:
+                    content, content_type = self.to_jpeg(content), "image/jpeg"
+                if len(content) > MAX_IMAGE_BYTES:
+                    raise ValueError("image too large")
             except (OSError, ValueError):
                 image.drop_tree()
                 continue
-            if (
-                not download.content_type.startswith("image/")
-                or download.content_type in SKIPPED_IMAGE_TYPES
-                or len(download.content) > MAX_IMAGE_BYTES
-            ):
-                image.drop_tree()
-                continue
             index = sum(1 for item in book.items if item.media_type.startswith("image/"))
-            extension = mimetypes.guess_extension(download.content_type) or ".img"
-            name = f"images/{index}{extension}"
-            item = epub.EpubItem(
-                uid=f"image{index}", file_name=name, media_type=download.content_type, content=download.content
-            )
+            name = f"images/{index}{KINDLE_IMAGE_TYPES[content_type]}"
+            item = epub.EpubItem(uid=f"image{index}", file_name=name, media_type=content_type, content=content)
             book.add_item(item)
             image.set("src", name)
+
+    @staticmethod
+    def to_jpeg(content: bytes) -> bytes:
+        picture = Image.open(BytesIO(content)).convert("RGBA")
+        canvas = Image.new("RGB", picture.size, "white")
+        canvas.paste(picture, mask=picture.getchannel("A"))
+        buffer = BytesIO()
+        canvas.save(buffer, "JPEG", quality=85)
+        return buffer.getvalue()
 
     def format_code(self, tree: lxml_html.HtmlElement) -> None:
         for block in list(tree.iter("pre")):

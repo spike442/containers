@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 AN_HOUR_AGO = time.time() - 3600
 WEBHOOK = "https://discord.test/webhook"
@@ -30,6 +31,7 @@ GUIDE_PRINT_PAGE = f"""<html lang="en"><head><title>Operator Guide</title></head
 <p>Read <a href="#reconcile">the loop</a>.</p><img src="images/demo.gif" alt="demo">
 <pre><code class="language-go">{GO_SNIPPET}</code></pre>
 <h1 id="reconcile">Reconcile</h1><p>{PARAGRAPH}</p><img src="images/watermark.png" alt="diagram">
+<img src="images/sketch.webp" alt="sketch">
 </main></body></html>"""
 MESSAGES = [
     {
@@ -111,6 +113,10 @@ class MemoryWeb:
             return MemoryResponse(GUIDE_PAGE.encode(), "text/html", url)
         if url == GUIDE_PRINT:
             return MemoryResponse(GUIDE_PRINT_PAGE.encode(), "text/html", url)
+        if url == "https://docs.test/images/sketch.webp":
+            sketch = BytesIO()
+            Image.new("RGBA", (4, 4), (0, 0, 0, 128)).save(sketch, "WEBP")
+            return MemoryResponse(sketch.getvalue(), "image/webp", url)
         if url == "https://docs.test/images/demo.gif":
             return MemoryResponse(b"GIF89a", "image/gif", url)
         if url == GUARDED:
@@ -221,7 +227,7 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
         and '\n<span class="w">    </span>' in introduction
         and "\t" not in introduction
     )
-    assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/0.png"]
+    assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/0.png", "EPUB/images/1.jpg"]
     assert len(reactions) == 4 and all(url.endswith("/reactions/%E2%9C%85/@me") for url in reactions)
     assert replies == [
         "📰 Streaming 101.epub sent to Kindle",
