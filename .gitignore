@@ -19,5 +19,3 @@ CLAUDE.local.md
 .agents/
 *.egg-info/
 
-README.md
-!/README.md
