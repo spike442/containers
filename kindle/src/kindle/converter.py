@@ -13,6 +13,7 @@ from kindle.downloader import Downloader
 MAX_IMAGE_BYTES = 1024 * 1024
 SKIPPED_IMAGE_TYPES = {"image/gif"}
 CHAPTER_FILE = "chapter{}.xhtml"
+UNSUPPORTED_ELEMENTS = ".//svg | .//script | .//style | .//input | .//button | .//form | .//iframe"
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,8 @@ class EpubConverter:
         if main is None:
             raise ValueError("no book content found on the page")
         title = (tree.findtext(".//title") or url).strip()
+        for element in main.xpath(UNSUPPORTED_ELEMENTS):
+            element.drop_tree()
         chapters = []
         for element in main:
             if element.tag == "h1" or not chapters:

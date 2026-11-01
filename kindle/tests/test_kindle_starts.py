@@ -25,7 +25,7 @@ GUIDE_PAGE = """<html lang="en"><head><title>Operator Guide</title></head><body>
 <nav><a href="../print.html">Print this book</a></nav><main><h1>Introduction</h1></main></body></html>"""
 GUIDE_PRINT_PAGE = f"""<html lang="en"><head><title>Operator Guide</title></head><body><!-- Book generated using mdBook -->
 <nav><a href="print.html">Print this book</a></nav><main>
-<h1 id="introduction">Introduction</h1><p>{PARAGRAPH}</p><p>Read <a href="#reconcile">the loop</a>.</p>
+<h1 id="introduction">Introduction</h1><p><svg viewBox="0 0 16 16"><path d="M0 0"/></svg>{PARAGRAPH}</p><p>Read <a href="#reconcile">the loop</a>.</p>
 <img src="images/demo.gif" alt="demo">
 <h1 id="reconcile">Reconcile</h1><p>{PARAGRAPH}</p><img src="images/watermark.png" alt="diagram">
 </main></body></html>"""
@@ -210,6 +210,7 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
     assert "Home Blog About" not in chapter
     assert "Introduction" in navigation and "Reconcile" in navigation
     assert 'href="chapter1.xhtml#reconcile"' in introduction
+    assert "<svg" not in introduction and "Streaming systems" in introduction
     assert [name for name in guide.namelist() if "images/" in name] == ["EPUB/images/1.png"]
     assert len(reactions) == 4 and all(url.endswith("/reactions/%E2%9C%85/@me") for url in reactions)
     assert replies == [
