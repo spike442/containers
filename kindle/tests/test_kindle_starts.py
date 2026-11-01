@@ -194,15 +194,9 @@ def test_sync_kindle_sends_each_new_book_once(kindle, monkeypatch, tmp_path) -> 
     assert len(kindle.webhook) == 3
 
 
-def reflow_for_kindle(command, **options):
-    Path(command[command.index("-o") + 1]).write_bytes(b"%PDF-kindle")
-
-
 def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(kindle, monkeypatch, tmp_path) -> None:
     state = tmp_path / "data" / "fetch-articles.json"
-    from kindle import fetch_articles, reflower
-
-    monkeypatch.setattr(reflower.subprocess, "run", reflow_for_kindle)
+    from kindle import fetch_articles
 
     monkeypatch.setattr(fetch_articles, "STATE", state)
     monkeypatch.setattr(fetch_articles.time, "sleep", stop_after(1))
@@ -219,7 +213,7 @@ def test_fetch_articles_sends_each_linked_page_document_guarded_page_and_book(ki
     reactions = [url for method, url, _ in kindle.discord if method == "PUT"]
     replies = [json.loads(data)["content"] for method, _, data in kindle.discord if method == "POST"]
     assert names == ["Streaming 101.epub", "dynamo.pdf", "Batch 201.epub", "Operator Guide.epub"]
-    assert attachments[1].get_payload(decode=True) == b"%PDF-kindle"
+    assert attachments[1].get_payload(decode=True) == b"%PDF-1.7"
     assert "EPUB/images/0.png" in article.namelist()
     assert "Streaming systems process unbounded data" in chapter
     assert "Home Blog About" not in chapter
